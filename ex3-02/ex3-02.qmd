@@ -1,0 +1,827 @@
+---
+title: "Exercise 3-02"
+author: "Riyanshi Bohra"
+format: html
+editor: visual
+---
+
+# Exercise 3: Classification: Alternative Techniques
+
+# Setting Up
+
+```{r}
+# Installing necessary packages
+if(!require(pacman))
+  install.packages("pacman")
+
+pacman::p_load(
+  C50,                
+  caret,              
+  e1071,              
+  keras,             
+  kernlab,            
+  lattice,            
+  MASS,               
+  mlbench,           
+  nnet,               
+  palmerpenguins,     
+  party,              
+  partykit,           
+  randomForest,       
+  rpart,              
+  RWeka,              
+  scales,            
+  tidymodels,         
+  tidyverse,        
+  xgboost             
+)
+```
+
+```{r}
+# Show fewer digits
+options(digits=3)
+```
+
+# Training and Test Data
+
+```{r}
+# Loading the Zoo dataset
+
+data(Zoo, package="mlbench")
+Zoo <- as.data.frame(Zoo)
+Zoo |> glimpse()
+```
+
+```{r}
+# Partitioning the data into 80% Train data and 20% test data
+
+set.seed(123)  # for reproducibility
+inTrain <- createDataPartition(y = Zoo$type, p = .8)[[1]]
+Zoo_train <- dplyr::slice(Zoo, inTrain)
+Zoo_test <- dplyr::slice(Zoo, -inTrain)
+```
+
+# Fitting Different Classification Models
+
+```{r}
+# Create a fixed sampling scheme (10-folds)
+train_index <- createFolds(Zoo_train$type, k = 10)
+```
+
+## Conditional Inference Tree (Decision Tree)
+
+```{r}
+# Creating a ctree( Decision Tree)
+ctreeFit <- Zoo_train |> train(type ~ .,
+  method = "ctree",
+  data = _,
+    tuneLength = 5,
+    trControl = trainControl(method = "cv", indexOut = train_index))
+ctreeFit
+```
+
+```{r}
+# Plotting the ctree
+plot(ctreeFit$finalModel)
+```
+
+## C 4.5 Decision Tree
+
+```{r}
+C45Fit <- Zoo_train |> train(type ~ .,
+  method = "J48",
+  data = _,
+    tuneLength = 5,
+    trControl = trainControl(method = "cv", indexOut = train_index))
+C45Fit
+```
+
+```{r}
+C45Fit$finalModel
+```
+
+## K-Nearest Neighbors
+
+```{r}
+# Creatinga KNN Model
+knnFit <- Zoo_train |> train(type ~ .,
+  method = "knn",
+  data = _,
+  preProcess = "scale",
+    tuneLength = 5,
+  tuneGrid=data.frame(k = 1:10),
+    trControl = trainControl(method = "cv", indexOut = train_index))
+knnFit
+```
+
+```{r}
+knnFit$finalModel
+```
+
+## PART (Rule-based classifier)
+
+```{r}
+# Creating a Rule-based classifier
+rulesFit <- Zoo_train |> train(type ~ .,
+  method = "PART",
+  data = _,
+  tuneLength = 5,
+  trControl = trainControl(method = "cv", indexOut = train_index))
+rulesFit
+```
+
+```{r}
+rulesFit$finalModel
+```
+
+## Linear Support Vector Machines
+
+```{r}
+# Creating a Linear SVM model
+svmFit <- Zoo_train |> train(type ~.,
+  method = "svmLinear",
+  data = _,
+    tuneLength = 5,
+    trControl = trainControl(method = "cv", indexOut = train_index))
+svmFit
+```
+
+```{r}
+svmFit$finalModel
+```
+
+## Random Forest
+
+```{r}
+# Create a random forest model
+randomForestFit <- Zoo_train |> train(type ~ .,
+  method = "rf",
+  data = _,
+    tuneLength = 5,
+    trControl = trainControl(method = "cv", indexOut = train_index))
+randomForestFit
+```
+
+```{r}
+randomForestFit$finalModel
+```
+
+## Gradient Boosted Decision Trees (xgboost)
+
+```{r}
+# Creating a xgboost model 
+
+xgboostFit <- Zoo_train |> train(type ~ .,
+  method = "xgbTree",
+  data = _,
+  tuneLength = 5,
+  trControl = trainControl(method = "cv", indexOut = train_index),
+  tuneGrid = expand.grid(
+    nrounds = 20,
+    max_depth = 3,
+    colsample_bytree = .6,
+    eta = 0.1,
+    gamma=0,
+    min_child_weight = 1,
+    subsample = .5
+  ))
+xgboostFit
+```
+
+```{r}
+xgboostFit$finalModel
+```
+
+## Artificial Neural Network
+
+```{r}
+# Create an ANN Model
+nnetFit <- Zoo_train |> train(type ~ .,
+  method = "nnet",
+  data = _,
+    tuneLength = 5,
+    trControl = trainControl(method = "cv", indexOut = train_index),
+  trace = FALSE)
+nnetFit
+```
+
+```{r}
+nnetFit$finalModel
+```
+
+## Comparing Models
+
+```{r}
+# Collecting the performance metrics from the models trained on the same data
+
+resamps <- resamples(list(
+  ctree = ctreeFit,
+  C45 = C45Fit,
+  SVM = svmFit,
+  KNN = knnFit,
+  rules = rulesFit,
+  randomForest = randomForestFit,
+  xgboost = xgboostFit,
+  NeuralNet = nnetFit
+    ))
+resamps
+```
+
+```{r}
+# Calculate summary statistics
+
+summary(resamps)
+```
+
+```{r}
+# Plotting using lattice
+library(lattice)
+bwplot(resamps, layout = c(3, 1))
+```
+
+```{r}
+# Perform inference about differences between models
+difs <- diff(resamps)
+difs
+```
+
+```{r}
+# Finding summary statistics
+summary(difs)
+```
+
+# Applying the Chosen Model to the Test Data
+
+```{r}
+# Choosing Random Forest Model for Test data
+pr <- predict(randomForestFit, Zoo_test)
+pr
+```
+
+```{r}
+# Calculate the confusion matrix for the test data
+
+confusionMatrix(pr, reference = Zoo_test$type)
+```
+
+# Comparing Decision Boundaries
+
+```{r}
+library(scales)
+library(tidyverse)
+library(ggplot2)
+library(caret)
+
+decisionplot <- function(model, data, class_var, 
+  predict_type = c("class", "prob"), resolution = 3 * 72) {
+  # resolution is set to 72 dpi if the image is rendered  3 inches wide. 
+  
+  y <- data |> pull(class_var)
+  x <- data |> dplyr::select(-all_of(class_var))
+  
+  # resubstitution accuracy
+  prediction <- predict(model, x, type = predict_type[1])
+  # LDA returns a list
+  if(is.list(prediction)) prediction <- prediction$class
+  prediction <- factor(prediction, levels = levels(y))
+  
+  cm <- confusionMatrix(data = prediction, 
+                        reference = y)
+  acc <- cm$overall["Accuracy"]
+  
+  # evaluate model on a grid
+  r <- sapply(x[, 1:2], range, na.rm = TRUE)
+  xs <- seq(r[1,1], r[2,1], length.out = resolution)
+  ys <- seq(r[1,2], r[2,2], length.out = resolution)
+  g <- cbind(rep(xs, each = resolution), rep(ys, time = resolution))
+  colnames(g) <- colnames(r)
+  g <- as_tibble(g)
+  
+  ### guess how to get class labels from predict
+  ### (unfortunately not very consistent between models)
+  cl <- predict(model, g, type = predict_type[1])
+  
+  # LDA returns a list
+  prob <- NULL
+  if(is.list(cl)) { 
+    prob <- cl$posterior
+    cl <- cl$class
+  } else
+    if(!is.na(predict_type[2]))
+      try(prob <- predict(model, g, type = predict_type[2]))
+  
+  # we visualize the difference in probability/score between the 
+  # winning class and the second best class.
+  # don't use probability if predict for the classifier does not support it.
+  max_prob <- 1
+  if(!is.null(prob))
+    try({
+      max_prob <- t(apply(prob, MARGIN = 1, sort, decreasing = TRUE))
+      max_prob <- max_prob[,1] - max_prob[,2]
+    }, silent = TRUE) 
+  
+  cl <- factor(cl, levels = levels(y))
+  
+  g <- g |> add_column(prediction = cl, probability = max_prob)
+  
+  ggplot(g, mapping = aes(
+    x = .data[[colnames(g)[1]]], y = .data[[colnames(g)[2]]])) +
+    geom_raster(mapping = aes(fill = prediction, alpha = probability)) +
+    geom_contour(mapping = aes(z = as.numeric(prediction)), 
+      bins = length(levels(cl)), linewidth = .5, color = "black") +
+    geom_point(data = data, mapping =  aes(
+      x = .data[[colnames(data)[1]]], 
+      y = .data[[colnames(data)[2]]],
+      shape = .data[[class_var]]), alpha = .7) + 
+    scale_alpha_continuous(range = c(0,1), limits = c(0,1), guide = "none") +  
+    labs(subtitle = paste("Training accuracy:", round(acc, 2))) +
+     theme_minimal(base_size = 14)
+}
+```
+
+# Penguins Dataset
+
+```{r}
+# We use two dimensions of the penguins dataset for visualization
+set.seed(1000)
+data("penguins")
+penguins <- as_tibble(penguins) |>
+  drop_na()
+
+x <- penguins |> dplyr::select(bill_length_mm, bill_depth_mm, species)
+x
+```
+
+```{r}
+# Plot
+ggplot(x, aes(x = bill_length_mm, y = bill_depth_mm, fill = species)) +  
+  stat_density_2d(geom = "polygon", aes(alpha = after_stat(level))) +
+  geom_point() +
+  theme_minimal(base_size = 14) +
+  labs(x = "Bill length (mm)",
+       y = "Bill depth (mm)",
+       fill = "Species",
+       alpha = "Density")
+```
+
+## K-Nearest Neighbors Classifier
+
+```{r}
+# Visualize the KNN classifier with penguins dataset
+# 1 neighbor
+model <- x |> caret::knn3(species ~ ., data = _, k = 1)
+decisionplot(model, x, class_var = "species") + 
+  labs(title = "kNN (1 neighbor)",
+       x = "Bill length (mm)",
+       y = "Bill depth (mm)",
+       shape = "Species",
+       fill = "Prediction")
+```
+
+```{r}
+# Visualize the KNN classifier with penguins dataset
+# 3 neighbors
+model <- x |> caret::knn3(species ~ ., data = _, k = 3)
+decisionplot(model, x, class_var = "species") + 
+  labs(title = "kNN (3 neighbor)",
+       x = "Bill length (mm)",
+       y = "Bill depth (mm)",
+       shape = "Species",
+       fill = "Prediction")
+```
+
+```{r}
+# Visualize the KNN classifier with penguins dataset
+# 9 neighbors
+
+model <- x |> caret::knn3(species ~ ., data = _, k = 9)
+decisionplot(model, x, class_var = "species") + 
+  labs(title = "kNN (9 neighbor)",
+       x = "Bill length (mm)",
+       y = "Bill depth (mm)",
+       shape = "Species",
+       fill = "Prediction")
+```
+
+## Naive Bayes Classifier
+
+```{r}
+# Visualize the Naive Bayes classifier with penguins dataset
+
+model <- x |> e1071::naiveBayes(species ~ ., data = _)
+decisionplot(model, x, class_var = "species", 
+             predict_type = c("class", "raw")) + 
+  labs(title = "Naive Bayes",
+       x = "Bill length (mm)",
+       y = "Bill depth (mm)",
+       shape = "Species",
+       fill = "Prediction") 
+```
+
+## Linear Discriminant Analysis
+
+```{r}
+# Visualize the Linear Discriminant Analysis with penguins dataset
+
+model <- x |> MASS::lda(species ~ ., data = _)
+decisionplot(model, x, class_var = "species") + 
+  labs(title = "LDA",
+       x = "Bill length (mm)",
+       y = "Bill depth (mm)",
+       shape = "Species",
+       fill = "Prediction")
+```
+
+## Multinomial Logistic Regression
+
+```{r}
+# Multinomial Logistic Regression implemented in nnet
+model <- x |> nnet::multinom(species ~., data = _)
+```
+
+```{r}
+# Plotting the model
+decisionplot(model, x, class_var = "species") + 
+  labs(title = "Multinomial Logistic Regression",
+       x = "Bill length (mm)",
+       y = "Bill depth (mm)",
+       shape = "Species",
+       fill = "Prediction")
+```
+
+## Decision Trees
+
+```{r}
+# Visualize the CART Decision Tree with penguins dataset
+
+model <- x |> rpart::rpart(species ~ ., data = _)
+decisionplot(model, x, class_var = "species") + 
+  labs(title = "CART",
+       x = "Bill length (mm)",
+       y = "Bill depth (mm)",
+       shape = "Species",
+       fill = "Prediction")
+```
+
+```{r}
+# Create an overfitting CART model
+model <- x |> rpart::rpart(species ~ ., data = _,
+  control = rpart.control(cp = 0.001, minsplit = 1))
+decisionplot(model, x, class_var = "species") + 
+  labs(title = "CART (overfitting)",
+       x = "Bill length (mm)",
+       y = "Bill depth (mm)",
+       shape = "Species",
+       fill = "Prediction")
+```
+
+```{r}
+# C5.0 Model
+model <- x |> C50::C5.0(species ~ ., data = _)
+decisionplot(model, x, class_var = "species") + 
+  labs(title = "C5.0",
+       x = "Bill length (mm)",
+       y = "Bill depth (mm)",
+       shape = "Species",
+       fill = "Prediction")
+```
+
+```{r}
+# Using Random Forest model
+
+model <- x |> randomForest::randomForest(species ~ ., data = _)
+decisionplot(model, x, class_var = "species") + 
+  labs(title = "Random Forest",
+       x = "Bill length (mm)",
+       y = "Bill depth (mm)",
+       shape = "Species",
+       fill = "Prediction")
+```
+
+## Support Vector Machine
+
+```{r}
+# Visualize the Support Vector Machine model with penguins dataset
+# Linear Kernel
+
+model <- x |> e1071::svm(species ~ ., data = _, kernel = "linear")
+decisionplot(model, x, class_var = "species") + 
+  labs(title = "SVM (linear kernel)",
+       x = "Bill length (mm)",
+       y = "Bill depth (mm)",
+       shape = "Species",
+       fill = "Prediction")
+```
+
+```{r}
+# Visualize the Support Vector Machine model with penguins dataset
+# Radial Kernel
+
+model <- x |> e1071::svm(species ~ ., data = _, kernel = "radial")
+decisionplot(model, x, class_var = "species") + 
+  labs(title = "SVM (radial kernel)",
+       x = "Bill length (mm)",
+       y = "Bill depth (mm)",
+       shape = "Species",
+       fill = "Prediction")
+```
+
+```{r}
+
+# Visualize the Support Vector Machine model with penguins dataset
+# Polynomial Kernel
+
+model <- x |> e1071::svm(species ~ ., data = _, kernel = "polynomial")
+decisionplot(model, x, class_var = "species") + 
+  labs(title = "SVM (polynomial kernel)",
+       x = "Bill length (mm)",
+       y = "Bill depth (mm)",
+       shape = "Species",
+       fill = "Prediction")
+```
+
+```{r}
+# Visualize the Support Vector Machine model with penguins dataset
+# Sigmoid Kernel
+model <- x |> e1071::svm(species ~ ., data = _, kernel = "sigmoid")
+decisionplot(model, x, class_var = "species") + 
+  labs(title = "SVM (sigmoid kernel)",
+       x = "Bill length (mm)",
+       y = "Bill depth (mm)",
+       shape = "Species",
+       fill = "Prediction")
+```
+
+## Single Layer Feed-forward Neural Networks
+
+```{r}
+# Visualize the Neural network model with penguins dataset
+# 1 neuron
+model <-x |> nnet::nnet(species ~ ., data = _, size = 1, trace = FALSE)
+decisionplot(model, x, class_var  = "species", 
+  predict_type = c("class", "raw")) + 
+  labs(title = "NN (1 neuron)",
+       x = "Bill length (mm)",
+       y = "Bill depth (mm)",
+       shape = "Species",
+       fill = "Prediction")
+```
+
+```{r}
+# Visualize the Neural network model with penguins dataset
+# 2 neurons
+model <-x |> nnet::nnet(species ~ ., data = _, size = 2, trace = FALSE)
+decisionplot(model, x, class_var  = "species", 
+  predict_type = c("class", "raw")) + 
+  labs(title = "NN (2 neurons)",
+       x = "Bill length (mm)",
+       y = "Bill depth (mm)",
+       shape = "Species",
+       fill = "Prediction")
+```
+
+```{r}
+# Visualize the Neural network model with penguins dataset
+# 4 neurons
+model <-x |> nnet::nnet(species ~ ., data = _, size = 4, trace = FALSE)
+decisionplot(model, x, class_var  = "species", 
+  predict_type = c("class", "raw")) + 
+  labs(title = "NN (4 neurons)",
+       x = "Bill length (mm)",
+       y = "Bill depth (mm)",
+       shape = "Species",
+       fill = "Prediction")
+```
+
+```{r}
+# Visualize the Neural network model with penguins dataset
+# 10 neurons
+model <-x |> nnet::nnet(species ~ ., data = _, size = 10, trace = FALSE)
+decisionplot(model, x, class_var  = "species", 
+  predict_type = c("class", "raw")) + 
+  labs(title = "NN (10 neurons)",
+       x = "Bill length (mm)",
+       y = "Bill depth (mm)",
+       shape = "Species",
+       fill = "Prediction")
+```
+
+# Circle Dataset
+
+```{r}
+
+set.seed(1000)
+
+x <- mlbench::mlbench.circle(500)
+x <- cbind(as.data.frame(x$x), factor(x$classes))
+colnames(x) <- c("x", "y", "class")
+x <- as_tibble(x)
+x
+```
+
+```{r}
+# Plotting the class variable
+ggplot(x, aes(x = x, y = y, color = class)) + 
+  geom_point() +
+  theme_minimal(base_size = 14)
+```
+
+## K-Nearest Neighbors Classifier
+
+```{r}
+# Visualize the KNN classifier with circle dataset
+# 1 neighbor
+model <- x |> caret::knn3(class ~ ., data = _, k = 1)
+decisionplot(model, x, class_var = "class") + 
+  labs(title = "kNN (1 neighbor)",
+       shape = "Class",
+       fill = "Prediction")
+```
+
+```{r}
+# Visualize the KNN classifier with circle dataset
+# 10 neighbors
+model <- x |> caret::knn3(class ~ ., data = _, k = 10)
+decisionplot(model, x, class_var = "class") + 
+  labs(title = "kNN (10 neighbors)",
+       shape = "Class",
+       fill = "Prediction")
+```
+
+## Naive Bayes Classifier
+
+```{r}
+# Visualize the Naive Bayes classifier with circle dataset
+
+model <- x |> e1071::naiveBayes(class ~ ., data = _)
+decisionplot(model, x, class_var = "class", 
+  predict_type = c("class", "raw")) + 
+  labs(title = "Naive Bayes",
+       shape = "Class",
+       fill = "Prediction")
+```
+
+## Linear Discriminant Analysis
+
+```{r}
+# Visualize the Linear Discriminant Analysis with circle dataset
+# Not a good model since the true decision boundary is not linear
+model <- x |> MASS::lda(class ~ ., data = _)
+decisionplot(model, x, class_var = "class") + 
+  labs(title = "LDA",
+       shape = "Class",
+       fill = "Prediction")
+```
+
+## Logistic Regression
+
+```{r}
+# Create a logistic regression model implemented in nnet
+model <- x |> nnet::multinom(class ~., data = _)
+```
+
+```{r}
+# Plotting the model
+decisionplot(model, x, class_var = "class") + 
+  labs(title = "Multinomial Logistic Regression",
+       shape = "Class",
+       fill = "Prediction")
+```
+
+## Decision Trees
+
+```{r}
+# Visualize the CART model with circle dataset
+
+model <- x |> rpart::rpart(class ~ ., data = _)
+decisionplot(model, x, class_var = "class") + 
+  labs(title = "CART",
+       shape = "Class",
+       fill = "Prediction")
+```
+
+```{r}
+# Visualize the CART model with circle dataset
+# Overfitting CART model
+
+model <- x |> rpart::rpart(class ~ ., data = _,
+  control = rpart.control(cp = 0.001, minsplit = 1))
+decisionplot(model, x, class_var = "class") + 
+  labs(title = "CART (overfitting)",
+       shape = "Class",
+       fill = "Prediction")
+```
+
+```{r}
+# Visualize the C5.0 model with circle dataset
+
+model <- x |> C50::C5.0(class ~ ., data = _)
+decisionplot(model, x, class_var = "class") + 
+  labs(title = "C5.0",
+       shape = "Class",
+       fill = "Prediction")
+```
+
+```{r}
+# Random forest
+library(randomForest)
+model <- x |> randomForest(class ~ ., data = _)
+decisionplot(model, x, class_var = "class") + 
+  labs(title = "Random Forest",
+       shape = "Class",
+       fill = "Prediction")
+```
+
+```{r}
+# Visualize the Support Vector Machine model with circle dataset
+# Linear SVM
+model <- x |> e1071::svm(class ~ ., data = _, kernel = "linear")
+decisionplot(model, x, class_var = "class") + 
+  labs(title = "SVM (linear kernel)",
+       shape = "Class",
+       fill = "Prediction")
+```
+
+```{r}
+# Visualize the Support Vector Machine model with circle dataset
+# Radial SVM
+
+model <- x |> e1071::svm(class ~ ., data = _, kernel = "radial")
+decisionplot(model, x, class_var = "class") + 
+  labs(title = "SVM (radial kernel)",
+       shape = "Class",
+       fill = "Prediction")
+```
+
+```{r}
+# Visualize the Support Vector Machine model with circle dataset
+# Polynomial SVM
+model <- x |> e1071::svm(class ~ ., data = _, kernel = "polynomial")
+decisionplot(model, x, class_var = "class") + 
+  labs(title = "SVM (polynomial kernel)",
+       shape = "Class",
+       fill = "Prediction")
+```
+
+```{r}
+# Visualize the Support Vector Machine model with circle dataset
+# Sigmoid SVM
+model <- x |> e1071::svm(class ~ ., data = _, kernel = "sigmoid")
+decisionplot(model, x, class_var = "class") + 
+  labs(title = "SVM (sigmoid kernel)",
+       shape = "Class",
+       fill = "Prediction")
+```
+
+```{r}
+# Single Layer Feed-forward Neural Networks
+# Visualize the Neural network with circle dataset
+# 1 neuron
+model <-x |> nnet::nnet(class ~ ., data = _, size = 1, trace = FALSE)
+decisionplot(model, x, class_var = "class", 
+  predict_type = c("class")) + 
+  labs(title = "NN (1 neuron)",
+       shape = "Class",
+       fill = "Prediction")
+```
+
+```{r}
+# Single Layer Feed-forward Neural Networks
+# Visualize the Neural network with circle dataset
+# 2 neurons
+
+model <-x |> nnet::nnet(class ~ ., data = _, size = 2, trace = FALSE)
+decisionplot(model, x, class_var = "class", 
+  predict_type = c("class")) + 
+  labs(title = "NN (2 neurons)",
+       shape = "Class",
+       fill = "Prediction")
+```
+
+```{r}
+# Single Layer Feed-forward Neural Networks
+# Visualize the Neural network with circle dataset
+# 4 neurons
+model <-x |> nnet::nnet(class ~ ., data = _, size = 4, trace = FALSE)
+decisionplot(model, x, class_var = "class", 
+  predict_type = c("class")) + 
+  labs(title = "NN (4 neurons)",
+       shape = "Class",
+       fill = "Prediction")
+```
+
+```{r}
+# Single Layer Feed-forward Neural Networks
+# Visualize the Neural network with circle dataset
+# 10 neuron
+
+model <-x |> nnet::nnet(class ~ ., data = _, size = 10, trace = FALSE)
+decisionplot(model, x, class_var = "class", 
+  predict_type = c("class")) + 
+  labs(title = "NN (10 neurons)",
+       shape = "Class",
+       fill = "Prediction")
+```
+
+
+
